@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Treaty Compass</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f9f8f6;
+    --surface: #ffffff;
+    --border: #e4e2db;
+    --border-strong: #c8c6be;
+    --text: #1a1a18;
+    --text-muted: #6b6b66;
+    --text-faint: #9e9d97;
+    --red: #E24B4A; --red-bg: #FCEBEB; --red-text: #791F1F;
+    --yellow: #EF9F27; --yellow-bg: #FAEEDA; --yellow-text: #633806;
+    --green: #639922; --green-bg: #EAF3DE; --green-text: #27500A;
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-text: #0C447C;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    font-family: 'Georgia', serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .page { max-width: 960px; margin: 0 auto; }
+
+  header { margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .logo-mark {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: var(--text); display: flex; align-items: center;
+    justify-content: center; color: var(--surface); font-size: 18px;
+  }
+  h1 { font-size: 26px; font-weight: normal; letter-spacing: -0.5px; }
+  .tagline { font-size: 14px; color: var(--text-muted); font-family: sans-serif; }
+  .un-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-family: sans-serif; color: var(--blue-text);
+    background: var(--blue-bg); border: 0.5px solid #B5D4F4;
+    padding: 3px 10px; border-radius: 100px; margin-top: 10px;
+  }
+
+  .map-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1rem; margin-bottom: 1.25rem;
+    overflow: hidden;
+  }
+  .map-label {
+    font-size: 11px; font-family: sans-serif; text-transform: uppercase;
+    letter-spacing: 0.7px; color: var(--text-faint); margin-bottom: 10px;
+  }
+  #map-container { width: 100%; height: 400px; position: relative; cursor: pointer; }
+  #map-container svg { width: 100%; height: 100%; }
+
+  .country-path { fill: #d4e8c2; stroke: #fff; stroke-width: 0.5; transition: fill 0.15s; }
+  .country-path:hover { fill: #639922; }
+  .country-path.selected { fill: #1a1a18; }
+
+  .map-tooltip {
+    position: absolute; background: var(--text); color: var(--surface);
+    font-size: 12px; font-family: sans-serif; padding: 5px 10px;
+    border-radius: 5px; pointer-events: none; opacity: 0;
+    transition: opacity 0.1s; white-space: nowrap;
+  }
+
+  .map-hint { font-size: 11px; font-family: sans-serif; color: var(--text-faint); margin-top: 8px; text-align: center; }
+
+  .search-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.25rem;
+  }
+  .search-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px; margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; font-family: sans-serif; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg);
+    color: var(--text); font-size: 14px; font-family: sans-serif;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--border-strong); }
+
+  .api-row { display: flex; gap: 10px; align-items: flex-end; }
+  .api-row .field { flex: 1; }
+  .api-note { font-size: 11px; font-family: sans-serif; color: var(--text-faint); margin-top: 4px; }
+  .api-note a { color: var(--blue); }
+
+  .analyze-btn {
+    padding: 10px 24px; background: var(--text); color: var(--surface);
+    border: none; border-radius: var(--radius-sm); font-size: 14px;
+    font-family: sans-serif; font-weight: 500; cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s; white-space: nowrap;
+  }
+  .analyze-btn:hover { opacity: 0.85; }
+  .analyze-btn:active { transform: scale(0.97); }
+  .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .two-col { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1.25rem; margin-bottom: 1.25rem; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
+  .card-label { font-size: 10px; font-family: sans-serif; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-faint); margin-bottom: 1rem; }
+
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .gauge-svg { width: 200px; height: 110px; }
+  .gauge-status { font-size: 17px; text-align: center; }
+  .gauge-desc { font-size: 12px; font-family: sans-serif; color: var(--text-muted); text-align: center; margin-top: 2px; }
+  .zone-bar { display: flex; gap: 6px; width: 100%; }
+  .zone { flex: 1; border-radius: 4px; padding: 6px 4px; text-align: center; font-family: sans-serif; }
+  .zone-label { font-size: 11px; font-weight: 600; }
+  .zone-sub { font-size: 10px; margin-top: 1px; }
+  .zone.red { background: var(--red-bg); color: var(--red-text); }
+  .zone.yellow { background: var(--yellow-bg); color: var(--yellow-text); }
+  .zone.green { background: var(--green-bg); color: var(--green-text); }
+
+  .treaty-name { font-size: 15px; margin-bottom: 8px; }
+  .treaty-pill { font-size: 11px; font-family: sans-serif; display: inline-block; padding: 3px 8px; border-radius: 100px; background: var(--green-bg); color: var(--green-text); margin-bottom: 10px; }
+  .treaty-summary { font-size: 13px; font-family: sans-serif; color: var(--text-muted); line-height: 1.6; }
+
+  .gap-card { margin-bottom: 1.25rem; }
+  .gap-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: var(--radius-sm); margin-bottom: 8px; }
+  .gap-item:last-child { margin-bottom: 0; }
+  .gap-item.red { background: var(--red-bg); }
+  .gap-item.yellow { background: var(--yellow-bg); }
+  .gap-item.green { background: var(--green-bg); }
+  .gap-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+  .gap-item.red .gap-dot { background: var(--red); }
+  .gap-item.yellow .gap-dot { background: var(--yellow); }
+  .gap-item.green .gap-dot { background: var(--green); }
+  .gap-text { font-size: 13px; font-family: sans-serif; color: var(--text); line-height: 1.55; }
+  .gap-source { font-size: 11px; font-family: sans-serif; color: var(--text-faint); margin-top: 3px; }
+
+  .doc-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .doc-row:last-child { border-bottom: none; }
+  .doc-info { display: flex; align-items: center; gap: 10px; }
+  .doc-icon { width: 30px; height: 30px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .doc-name { font-size: 13px; font-family: sans-serif; font-weight: 500; color: var(--text); }
+  .doc-src { font-size: 11px; font-family: sans-serif; color: var(--text-faint); }
+  .doc-link { font-size: 12px; font-family: sans-serif; color: var(--blue); text-decoration: none; padding: 4px 12px; border: 1px solid #B5D4F4; border-radius: 100px; background: var(--blue-bg); transition: opacity 0.15s; }
+  .doc-link:hover { opacity: 0.75; }
+
+  .spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-wrap { text-align: center; padding: 2rem; }
+  .loading-text { font-size: 13px; font-family: sans-serif; color: var(--text-muted); }
+  .placeholder { text-align: center; padding: 2rem 1rem; color: var(--text-faint); font-size: 14px; font-family: sans-serif; }
+  .error-box { background: var(--red-bg); border: 1px solid #F7C1C1; border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; font-family: sans-serif; color: var(--red-text); }
+  .ai-note { font-size: 11px; font-family: sans-serif; color: var(--text-faint); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; display: flex; align-items: center; gap: 6px; }
+  .ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+
+  @media (max-width: 600px) {
+    .two-col { grid-template-columns: 1fr; }
+    .search-grid { grid-template-columns: 1fr; }
+    .api-row { flex-direction: column; }
+    #map-container { height: 240px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="logo">
+      <div class="logo-mark">⚖</div>
+      <h1>Treaty Compass</h1>
+    </div>
+    <div class="tagline">Identify where countries fall short of their international legal obligations.</div>
+    <div class="un-badge">&#9632; Aligned with UN SDG 16 — Peace, Justice &amp; Strong Institutions</div>
+  </header>
+
+  <div class="map-card">
+    <div class="map-label">Click any country on the map — or use the search below</div>
+    <div id="map-container">
+      <div class="map-tooltip" id="tooltip"></div>
+    </div>
+    <div class="map-hint">Click a country to select it, then choose a treaty and click Analyze</div>
+  </div>
+
+  <div class="search-panel">
+    <div class="search-grid">
+      <div class="field">
+        <label>Country</label>
+        <input type="text" id="country-input" placeholder="Click map or type here…" />
+      </div>
+      <div class="field">
+        <label>UN Treaty</label>
+        <select id="treaty-select">
+          <option value="">— Select a treaty —</option>
+          <option value="crc">Convention on the Rights of the Child (CRC)</option>
+          <option value="cedaw">Convention on Elimination of Discrimination Against Women (CEDAW)</option>
+          <option value="cat">Convention Against Torture (CAT)</option>
+          <option value="iccpr">Int'l Covenant on Civil &amp; Political Rights (ICCPR)</option>
+          <option value="icescr">Int'l Covenant on Economic, Social &amp; Cultural Rights (ICESCR)</option>
+          <option value="cerd">Convention on Elimination of Racial Discrimination (CERD)</option>
+          <option value="crpd">Convention on the Rights of Persons with Disabilities (CRPD)</option>
+        </select>
+      </div>
+    </div>
+    <div class="api-row">
+      <div class="field">
+        <label>Anthropic API Key</label>
+        <input type="password" id="api-key" placeholder="sk-ant-…" />
+        <div class="api-note">Key stays in your browser only. Get one free at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
+      </div>
+      <button class="analyze-btn" id="analyze-btn" onclick="runAnalysis()">Analyze ↗</button>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-label">Justice gap gauge</div>
+      <div id="gauge-container" class="placeholder">Select a country and treaty, then click Analyze.</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Treaty reference</div>
+      <div id="treaty-panel" class="placeholder">Select a treaty to see details.</div>
+    </div>
+  </div>
+
+  <div class="card gap-card">
+    <div class="card-label" id="gap-label">Identified gaps &amp; compliance signals</div>
+    <div id="gap-content" class="placeholder">After analysis, gaps sourced from UN reports, NGO documentation, and live news will appear here.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Documentation hub — primary sources</div>
+    <div id="doc-list" class="placeholder">Select a treaty to load official UN documents and NGO reports.</div>
+  </div>
+
+</div>
+
+<script>
+const TREATIES = {
+  crc: {
+    name: "Convention on the Rights of the Child",
+    abbr: "CRC, 1989",
+    summary: "Guarantees children's civil, political, economic, social, and cultural rights. 196 states parties — the most ratified human rights treaty.",
+    keyArticles: "Articles 2 (non-discrimination), 6 (life & survival), 19 (protection from violence), 24 (health), 28 (education), 32 (child labor), 37 (torture prohibition).",
+    docs: [
+      { name: "CRC Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/convention-rights-child", icon: "📄" },
+      { name: "UN Committee on the Rights of the Child", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/crc", icon: "🏛" },
+      { name: "UNICEF Country Data Hub", src: "UNICEF", url: "https://data.unicef.org/", icon: "📊" },
+      { name: "Child Rights Connect Reports", src: "NGO Coalition", url: "https://www.childrightsconnect.org/", icon: "🔗" },
+    ]
+  },
+  cedaw: {
+    name: "Convention on Elimination of All Forms of Discrimination Against Women",
+    abbr: "CEDAW, 1979",
+    summary: "Defines discrimination against women and sets an agenda for national action to end it. 189 states parties.",
+    keyArticles: "Articles 2 (policy obligations), 7 (political participation), 10 (education), 11 (employment), 12 (healthcare), 15 (equality before law), 16 (marriage & family).",
+    docs: [
+      { name: "CEDAW Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/convention-elimination-all-forms-discrimination-against-women", icon: "📄" },
+      { name: "CEDAW Committee Reports", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/cedaw", icon: "🏛" },
+      { name: "UN Women Data Hub", src: "UN Women", url: "https://data.unwomen.org/", icon: "📊" },
+      { name: "Human Rights Watch — Women's Rights", src: "HRW", url: "https://www.hrw.org/topic/womens-rights", icon: "🔗" },
+    ]
+  },
+  cat: {
+    name: "Convention Against Torture",
+    abbr: "CAT, 1984",
+    summary: "Prohibits torture and cruel, inhuman, or degrading treatment or punishment under any circumstances. 173 states parties.",
+    keyArticles: "Articles 1 (definition), 2 (prevention), 3 (non-refoulement), 10 (training), 12 (investigation), 14 (remedy), 16 (cruel treatment).",
+    docs: [
+      { name: "CAT Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/convention-against-torture-and-other-cruel-inhuman-or-degrading", icon: "📄" },
+      { name: "Committee Against Torture", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/cat", icon: "🏛" },
+      { name: "Amnesty International — Torture Reports", src: "Amnesty International", url: "https://www.amnesty.org/en/what-we-do/torture/", icon: "🔗" },
+      { name: "UN Special Rapporteur on Torture", src: "OHCHR", url: "https://www.ohchr.org/en/special-procedures/sr-torture", icon: "🔗" },
+    ]
+  },
+  iccpr: {
+    name: "International Covenant on Civil and Political Rights",
+    abbr: "ICCPR, 1966",
+    summary: "Commits parties to respect civil and political rights including right to life, freedom of speech, privacy, and fair trial. 173 states parties.",
+    keyArticles: "Articles 6 (right to life), 7 (torture prohibition), 9 (liberty), 14 (fair trial), 17 (privacy), 18 (freedom of thought), 19 (expression), 25 (political participation).",
+    docs: [
+      { name: "ICCPR Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/international-covenant-civil-and-political-rights", icon: "📄" },
+      { name: "Human Rights Committee", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/ccpr", icon: "🏛" },
+      { name: "Freedom House Country Reports", src: "Freedom House", url: "https://freedomhouse.org/reports/freedom-world", icon: "📊" },
+      { name: "ACLU Global Reports", src: "ACLU/ICLU Network", url: "https://www.aclu.org/", icon: "🔗" },
+    ]
+  },
+  icescr: {
+    name: "International Covenant on Economic, Social and Cultural Rights",
+    abbr: "ICESCR, 1966",
+    summary: "Recognizes the rights to work, education, food, housing, health, and social security. 172 states parties.",
+    keyArticles: "Articles 6 (right to work), 9 (social security), 11 (adequate standard of living), 12 (health), 13 (education), 15 (cultural life).",
+    docs: [
+      { name: "ICESCR Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/international-covenant-economic-social-and-cultural-rights", icon: "📄" },
+      { name: "Committee on Economic, Social & Cultural Rights", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/cescr", icon: "🏛" },
+      { name: "World Bank Poverty & Equity Data", src: "World Bank", url: "https://data.worldbank.org/topic/poverty", icon: "📊" },
+      { name: "Oxfam Inequality Reports", src: "Oxfam International", url: "https://www.oxfam.org/en/research", icon: "🔗" },
+    ]
+  },
+  cerd: {
+    name: "Convention on the Elimination of All Forms of Racial Discrimination",
+    abbr: "CERD, 1965",
+    summary: "Obliges states to prohibit racial discrimination and promote understanding among all races. 182 states parties.",
+    keyArticles: "Articles 2 (prohibition obligations), 4 (hate speech), 5 (equal rights), 6 (effective remedies), 7 (education & tolerance).",
+    docs: [
+      { name: "CERD Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/international-convention-elimination-all-forms-racial", icon: "📄" },
+      { name: "Committee on Racial Discrimination", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/cerd", icon: "🏛" },
+      { name: "Minority Rights Group International", src: "MRG", url: "https://minorityrights.org/", icon: "🔗" },
+      { name: "UNHCR Reports", src: "UNHCR", url: "https://www.unhcr.org/", icon: "🔗" },
+    ]
+  },
+  crpd: {
+    name: "Convention on the Rights of Persons with Disabilities",
+    abbr: "CRPD, 2006",
+    summary: "Promotes, protects, and ensures equal enjoyment of human rights by all persons with disabilities. 187 states parties.",
+    keyArticles: "Articles 9 (accessibility), 12 (legal capacity), 13 (access to justice), 19 (independent living), 24 (education), 27 (work), 29 (political participation).",
+    docs: [
+      { name: "CRPD Full Text", src: "OHCHR", url: "https://www.ohchr.org/en/instruments-mechanisms/instruments/convention-rights-persons-disabilities", icon: "📄" },
+      { name: "Committee on Rights of Persons with Disabilities", src: "OHCHR Treaty Bodies", url: "https://www.ohchr.org/en/treaty-bodies/crpd", icon: "🏛" },
+      { name: "Disability Rights International", src: "DRI", url: "https://www.driadvocacy.org/", icon: "🔗" },
+      { name: "WHO Disability Data", src: "World Health Organization", url: "https://www.who.int/health-topics/disability", icon: "📊" },
+    ]
+  }
+};
+
+// ── MAP ──────────────────────────────────────────────────────────────────────
+
+async function buildMap() {
+  const container = document.getElementById('map-container');
+  const tooltip = document.getElementById('tooltip');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  const svg = d3.select('#map-container').append('svg')
+    .attr('width', width).attr('height', height);
+
+  const projection = d3.geoNaturalEarth1()
+    .scale(width / 6.2)
+    .translate([width / 2, height / 2]);
+
+  const path = d3.geoPath().projection(projection);
+
+  let world;
+  try {
+    world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  } catch (e) {
+    container.innerHTML = '<div style="text-align:center;padding:3rem;font-family:sans-serif;color:#9e9d97;font-size:14px;">Map could not load — use the country search bar below instead.</div>';
+    return;
+  }
+
+  const countries = topojson.feature(world, world.objects.countries);
+
+  const nameMap = {
+    "004":"Afghanistan","008":"Albania","012":"Algeria","024":"Angola","032":"Argentina",
+    "036":"Australia","040":"Austria","050":"Bangladesh","056":"Belgium","064":"Bhutan",
+    "068":"Bolivia","076":"Brazil","100":"Bulgaria","116":"Cambodia","120":"Cameroon",
+    "124":"Canada","144":"Sri Lanka","152":"Chile","156":"China","170":"Colombia",
+    "178":"Congo","188":"Costa Rica","191":"Croatia","192":"Cuba","208":"Denmark",
+    "214":"Dominican Republic","218":"Ecuador","818":"Egypt","222":"El Salvador",
+    "231":"Ethiopia","246":"Finland","250":"France","276":"Germany","288":"Ghana",
+    "300":"Greece","320":"Guatemala","332":"Haiti","340":"Honduras","356":"India",
+    "360":"Indonesia","364":"Iran","368":"Iraq","372":"Ireland","376":"Israel",
+    "380":"Italy","388":"Jamaica","392":"Japan","400":"Jordan","398":"Kazakhstan",
+    "404":"Kenya","410":"South Korea","414":"Kuwait","418":"Laos","422":"Lebanon",
+    "426":"Lesotho","434":"Libya","484":"Mexico","504":"Morocco","508":"Mozambique",
+    "516":"Namibia","524":"Nepal","528":"Netherlands","554":"New Zealand","558":"Nicaragua",
+    "566":"Nigeria","578":"Norway","586":"Pakistan","591":"Panama","598":"Papua New Guinea",
+    "600":"Paraguay","604":"Peru","608":"Philippines","616":"Poland","620":"Portugal",
+    "630":"Puerto Rico","634":"Qatar","642":"Romania","643":"Russia","646":"Rwanda",
+    "682":"Saudi Arabia","686":"Senegal","694":"Sierra Leone","703":"Slovakia",
+    "706":"Somalia","710":"South Africa","724":"Spain","729":"Sudan","752":"Sweden",
+    "756":"Switzerland","760":"Syria","764":"Thailand","768":"Togo","780":"Trinidad and Tobago",
+    "788":"Tunisia","792":"Turkey","800":"Uganda","804":"Ukraine","784":"United Arab Emirates",
+    "826":"United Kingdom","840":"United States","858":"Uruguay","860":"Uzbekistan",
+    "862":"Venezuela","704":"Vietnam","887":"Yemen","894":"Zambia","716":"Zimbabwe"
+  };
+
+  svg.selectAll('.country-path')
+    .data(countries.features)
+    .enter().append('path')
+    .attr('class', 'country-path')
+    .attr('d', path)
+    .on('mousemove', function(event, d) {
+      const name = nameMap[String(d.id).padStart(3,'0')] || null;
+      if (!name) return;
+      tooltip.style.opacity = '1';
+      tooltip.style.left = (event.offsetX + 12) + 'px';
+      tooltip.style.top = (event.offsetY - 28) + 'px';
+      tooltip.textContent = name;
+    })
+    .on('mouseleave', function() {
+      tooltip.style.opacity = '0';
+    })
+    .on('click', function(event, d) {
+      const name = nameMap[String(d.id).padStart(3,'0')] || null;
+      if (!name) return;
+      svg.selectAll('.country-path').classed('selected', false);
+      d3.select(this).classed('selected', true);
+      document.getElementById('country-input').value = name;
+      tooltip.style.opacity = '0';
+      const treatyKey = document.getElementById('treaty-select').value;
+      if (treatyKey) {
+        renderTreatyPanel(treatyKey);
+        renderDocs(treatyKey);
+        runAnalysis();
+      } else {
+        document.getElementById('treaty-select').focus();
+      }
+    });
+}
+
+buildMap();
+
+// ── TREATY PANEL ─────────────────────────────────────────────────────────────
+
+document.getElementById('treaty-select').addEventListener('change', function() {
+  const key = this.value;
+  if (!key) return;
+  renderTreatyPanel(key);
+  renderDocs(key);
+});
+
+function renderTreatyPanel(key) {
+  const t = TREATIES[key];
+  document.getElementById('treaty-panel').innerHTML = `
+    <div class="treaty-name">${t.name}</div>
+    <div class="treaty-pill">${t.abbr}</div>
+    <div class="treaty-summary">${t.summary}</div>
+    <div style="margin-top:12px;font-size:11px;font-family:sans-serif;color:#9e9d97;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key articles</div>
+    <div style="font-size:12px;font-family:sans-serif;color:#6b6b66;line-height:1.6;">${t.keyArticles}</div>
+  `;
+}
+
+function renderDocs(key) {
+  document.getElementById('doc-list').innerHTML = TREATIES[key].docs.map(d => `
+    <div class="doc-row">
+      <div class="doc-info">
+        <div class="doc-icon">${d.icon}</div>
+        <div>
+          <div class="doc-name">${d.name}</div>
+          <div class="doc-src">${d.src}</div>
+        </div>
+      </div>
+      <a class="doc-link" href="${d.url}" target="_blank">View ↗</a>
+    </div>
+  `).join('');
+}
+
+// ── GAUGE ────────────────────────────────────────────────────────────────────
+
+function renderGauge(score) {
+  const angle = -180 + (score / 100) * 180;
+  const rad = (angle * Math.PI) / 180;
+  const cx = 100, cy = 100, r = 75;
+  const nx = cx + r * Math.cos(rad);
+  const ny = cy + r * Math.sin(rad);
+  let color, status, desc;
+  if (score < 40) { color='#E24B4A'; status='Critical gaps'; desc='Country significantly misaligns with treaty obligations'; }
+  else if (score < 70) { color='#EF9F27'; status='Partial compliance'; desc='Notable gaps remain — enforcement or legislation lacking'; }
+  else { color='#639922'; status='Strong alignment'; desc='Country largely meets treaty obligations'; }
+  document.getElementById('gauge-container').innerHTML = `
+    <div class="gauge-wrap">
+      <svg class="gauge-svg" viewBox="0 0 200 115" xmlns="http://www.w3.org/2000/svg">
+        <path d="M15,100 A85,85 0 0,1 78,18" fill="none" stroke="#FCEBEB" stroke-width="14" stroke-linecap="round"/>
+        <path d="M78,18 A85,85 0 0,1 162,48" fill="none" stroke="#FAEEDA" stroke-width="14" stroke-linecap="round"/>
+        <path d="M162,48 A85,85 0 0,1 185,100" fill="none" stroke="#EAF3DE" stroke-width="14" stroke-linecap="round"/>
+        <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy}" r="6" fill="${color}"/>
+        <text x="100" y="96" text-anchor="middle" font-size="22" font-family="Georgia,serif" fill="${color}">${score}</text>
+      </svg>
+      <div class="gauge-status" style="color:${color}">${status}</div>
+      <div class="gauge-desc">${desc}</div>
+      <div class="zone-bar">
+        <div class="zone red"><div class="zone-label">0–39</div><div class="zone-sub">Critical</div></div>
+        <div class="zone yellow"><div class="zone-label">40–69</div><div class="zone-sub">Partial</div></div>
+        <div class="zone green"><div class="zone-label">70–100</div><div class="zone-sub">Aligned</div></div>
+      </div>
+    </div>
+  `;
+}
+
+// ── GAPS ─────────────────────────────────────────────────────────────────────
+
+function renderGaps(gaps, country, treatyKey) {
+  document.getElementById('gap-label').textContent = `Identified gaps — ${country} × ${TREATIES[treatyKey].abbr}`;
+  document.getElementById('gap-content').innerHTML = gaps.map(g => `
+    <div class="gap-item ${g.level}">
+      <div class="gap-dot"></div>
+      <div>
+        <div class="gap-text">${g.text}</div>
+        <div class="gap-source">Source basis: ${g.source}</div>
+      </div>
+    </div>
+  `).join('') + `
+    <div class="ai-note">
+      <div class="ai-dot"></div>
+      AI-assisted summary. Always verify against the primary sources in the Documentation Hub below.
+    </div>
+  `;
+}
+
+// ── ANALYSIS API CALL ────────────────────────────────────────────────────────
+
+async function runAnalysis() {
+  const country = document.getElementById('country-input').value.trim();
+  const treatyKey = document.getElementById('treaty-select').value;
+  const apiKey = document.getElementById('api-key').value.trim();
+
+  if (!country || !treatyKey) { alert('Please select a country and a treaty.'); return; }
+  if (!apiKey || !apiKey.startsWith('sk-ant-')) { alert('Please enter a valid Anthropic API key (starts with sk-ant-).'); return; }
+
+  const treaty = TREATIES[treatyKey];
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing…';
+
+  renderTreatyPanel(treatyKey);
+  renderDocs(treatyKey);
+
+  document.getElementById('gauge-container').innerHTML = `<div class="loading-wrap"><div class="spinner"></div><div class="loading-text">Searching UN reports and news for ${country}…</div></div>`;
+  document.getElementById('gap-content').innerHTML = `<div class="loading-wrap"><div class="spinner"></div><div class="loading-text">Identifying compliance gaps…</div></div>`;
+
+  const prompt = `You are a human rights analyst. A user wants to understand how well ${country} complies with the ${treaty.name} (${treaty.abbr}).
+
+Use your web search tool to find:
+1. Recent news (last 2 years) about ${country}'s human rights situation relevant to this treaty
+2. UN Committee concluding observations or UPR reports for ${country}
+3. Major NGO reports (Amnesty International, Human Rights Watch) about ${country} related to this treaty
+
+Respond ONLY with a JSON object in this exact format, no markdown, no explanation outside the JSON:
+{
+  "score": <integer 0-100 representing overall treaty compliance>,
+  "gaps": [
+    {
+      "level": "red",
+      "text": "<specific violation or critical gap with concrete detail>",
+      "source": "<source name and approximate date>"
+    },
+    {
+      "level": "yellow",
+      "text": "<partial compliance issue or enforcement gap>",
+      "source": "<source name and approximate date>"
+    },
+    {
+      "level": "green",
+      "text": "<area where country meets treaty obligations>",
+      "source": "<source name and approximate date>"
+    }
+  ]
+}
+
+Rules: score 0-39 = critical, 40-69 = partial, 70-100 = compliant. Include 2-4 gaps. Be specific and cite real sources.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || 'API request failed');
+
+    const textBlock = data.content.find(b => b.type === 'text');
+    if (!textBlock) throw new Error('No text response from API');
+
+    let jsonStr = textBlock.text.trim().replace(/```json|```/g, '').trim();
+    const result = JSON.parse(jsonStr);
+
+    renderGauge(result.score);
+    renderGaps(result.gaps, country, treatyKey);
+
+  } catch (err) {
+    document.getElementById('gauge-container').innerHTML = `<div class="error-box">Error: ${err.message}</div>`;
+    document.getElementById('gap-content').innerHTML = `<div class="error-box">Analysis failed. Check your API key and internet connection.</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Analyze ↗';
+}
+</script>
+</body>
+</html>
